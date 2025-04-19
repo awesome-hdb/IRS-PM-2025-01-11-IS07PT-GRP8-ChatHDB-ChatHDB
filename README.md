@@ -80,10 +80,6 @@ ChatHDB isn't just another valuation tool. Here's what sets us apart:
     ```
 
 3.  **Set up environment variables:**
-    *   Copy the example environment file:
-        ```bash
-        cp .env.example .env.local
-        ```
     *   **Edit `.env.local`** and add your API keys.
 
 4.  **Required API Keys:**
@@ -180,7 +176,7 @@ Our valuation process is designed for accuracy and relevance in Singapore's dyna
 ## ChatHDB Valuation Flow
 
 <p align="center">
-  <img src="public/backend_api.png" alt="Backend API Architecture" width="800"/>
+  <img src="public/backend_api_2.jpg" alt="Backend API Architecture" width="800"/>
 </p>
 
 Our valuation process follows a robust workflow:
