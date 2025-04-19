@@ -1,0 +1,71 @@
+.infoWindowContent {
+  @apply min-w-[320px] max-w-[400px] bg-white dark:bg-gray-900 p-6 rounded-xl shadow-lg dark:border dark:border-gray-700;
+  animation: slideIn 0.3s ease-out;
+}
+
+.infoRow {
+  @apply flex items-center gap-3 mb-3 last:mb-0;
+}
+
+.locationBadge {
+  @apply w-10 h-10 rounded-full bg-red-500 flex items-center justify-center shadow-sm;
+}
+
+.locationIcon {
+  @apply h-6 w-6 text-white;
+}
+
+.priceBadge {
+  @apply w-10 h-10 rounded-full flex items-center justify-center shadow-sm;
+}
+
+.priceText {
+  @apply text-gray-900 dark:text-gray-100 font-semibold text-base;
+}
+
+.priceAmount {
+  @apply font-bold text-2xl text-gray-900 dark:text-gray-100;
+}
+
+.infoIcon {
+  @apply w-5 h-5 text-gray-500 dark:text-gray-400 flex-shrink-0;
+}
+
+.infoText {
+  @apply text-gray-600 dark:text-gray-300 text-sm flex-1;
+}
+
+.infoLabel {
+  @apply text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider font-medium mb-1;
+}
+
+.divider {
+  @apply border-t border-gray-200 dark:border-gray-700 my-3;
+}
+
+.loadingIndicator {
+  @apply absolute top-4 right-4 bg-white dark:bg-gray-900 px-4 py-2 rounded-full shadow-md dark:border dark:border-gray-700;
+}
+
+.mapContainer {
+  @apply relative w-full h-full rounded-xl overflow-hidden shadow-lg;
+}
+
+.propertyDetails {
+  @apply space-y-4;
+}
+
+.mainInfo {
+  @apply mb-4;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+} 

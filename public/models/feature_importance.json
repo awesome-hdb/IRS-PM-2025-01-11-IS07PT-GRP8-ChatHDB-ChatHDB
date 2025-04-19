@@ -1,0 +1,18 @@
+{
+    "random_forest": {
+        "floor_area_sqm": 0.45,
+        "storey_avg": 0.25,
+        "remaining_lease": 0.15,
+        "lease_commence_date": 0.05,
+        "year": 0.05,
+        "month_num": 0.05
+    },
+    "xgboost": {
+        "floor_area_sqm": 0.4,
+        "storey_avg": 0.3,
+        "remaining_lease": 0.2,
+        "lease_commence_date": 0.04,
+        "year": 0.03,
+        "month_num": 0.03
+    }
+}
