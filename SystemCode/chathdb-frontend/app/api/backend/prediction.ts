@@ -63,18 +63,18 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
         // Get street transaction history data
         const response = await fetch('/data/hdb_resale.csv');
         const csv = await response.text();
-        
+
         const Papa = await import('papaparse');
         const results = Papa.parse(csv, {
             header: true,
             dynamicTyping: true,
             skipEmptyLines: true,
         });
-        
-        const transactions = results.data.filter((t: any) => 
+
+        const transactions = results.data.filter((t: any) =>
             t.street_name && t.street_name.toUpperCase() === streetName.toUpperCase()
         );
-        
+
         // Return default correlations if no transaction data
         if (!transactions || transactions.length < 5) {
             console.warn(`Insufficient transaction data for ${streetName}, using default correlations`);
@@ -86,85 +86,85 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
                 { index: 'Unemployment Index', correlation: -0.35, color: 'red-500' }
             ];
         }
-        
+
         // Sort transactions by date
         transactions.sort((a: any, b: any) => {
             if (!a.month || !b.month) return 0;
             return a.month.localeCompare(b.month);
         });
-        
+
         // Group by quarter to match economic data format
         const quarterlyPrices: Record<string, number[]> = {};
-        
+
         transactions.forEach((t: any) => {
             if (!t.month || !t.resale_price) return;
-            
+
             // Convert YYYY-MM to YYYY-QQ format
             const [year, month] = t.month.split('-');
             const quarter = Math.ceil(parseInt(month) / 3);
             const quarterKey = `${year}-${quarter < 10 ? '0' + quarter : quarter}`;
-            
+
             if (!quarterlyPrices[quarterKey]) {
                 quarterlyPrices[quarterKey] = [];
             }
-            
+
             quarterlyPrices[quarterKey].push(t.resale_price);
         });
-        
+
         // Calculate average price for each quarter
-        const quarterlyAvgPrices: {quarter: string, price: number}[] = Object.entries(quarterlyPrices)
+        const quarterlyAvgPrices: { quarter: string, price: number }[] = Object.entries(quarterlyPrices)
             .map(([quarter, prices]) => ({
                 quarter,
                 price: prices.reduce((sum, price) => sum + price, 0) / prices.length
             }))
             .sort((a, b) => a.quarter.localeCompare(b.quarter));
-        
+
         // Get economic data
         const ecoResponse = await fetch('/data/eco_data.csv');
         const ecoCsv = await ecoResponse.text();
-        
+
         const ecoResults = Papa.parse(ecoCsv, {
             header: true,
             dynamicTyping: true,
             skipEmptyLines: true,
         });
-        
+
         const ecoData = ecoResults.data;
-        
+
         // Convert month format in eco data to quarters for matching
         const ecoQuarterlyData: Record<string, any> = {};
-        
+
         ecoData.forEach((item: any) => {
             if (!item.month) return;
-            
+
             // Convert YYYY-MM to YYYY-QQ format
             const [year, month] = item.month.split('-');
             const quarter = Math.ceil(parseInt(month) / 3);
             const quarterKey = `${year}-${quarter < 10 ? '0' + quarter : quarter}`;
-            
+
             ecoQuarterlyData[quarterKey] = item;
         });
-        
+
         // Prepare data series for correlation calculation
         const indices = ['HDB Resale Index', 'GDP Index', 'CPI Index', 'Unemployment Index', 'Rental Index'];
         const colors = ['green-500', 'blue-500', 'purple-500', 'red-500', 'amber-500'];
-        
+
         const correlations = indices.map((index, i) => {
             // Extract matching quarters with both price and economic data
             const matchingQuarters = quarterlyAvgPrices.filter(
                 q => ecoQuarterlyData[q.quarter] && ecoQuarterlyData[q.quarter][index] !== undefined
             );
-            
+
             // If insufficient matching data, return default
             if (matchingQuarters.length < 5) {
                 const defaultValue = index === 'Unemployment Index' ? -0.35 : 0.5;
                 return { index, correlation: defaultValue, color: colors[i] };
             }
-            
+
             // Create data arrays for correlation calculation
             const prices = matchingQuarters.map(q => q.price);
             const indexValues = matchingQuarters.map(q => ecoQuarterlyData[q.quarter][index]);
-            
+
             // Calculate correlation using method from hdbData service
             let correlation;
             try {
@@ -172,11 +172,11 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
                 const n = prices.length;
                 const pricesMean = prices.reduce((sum, val) => sum + val, 0) / n;
                 const indexMean = indexValues.reduce((sum, val) => sum + val, 0) / n;
-                
+
                 let numerator = 0;
                 let pricesDenominator = 0;
                 let indexDenominator = 0;
-                
+
                 for (let i = 0; i < n; i++) {
                     const priceDiff = prices[i] - pricesMean;
                     const indexDiff = indexValues[i] - indexMean;
@@ -184,17 +184,17 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
                     pricesDenominator += priceDiff * priceDiff;
                     indexDenominator += indexDiff * indexDiff;
                 }
-                
+
                 correlation = numerator / Math.sqrt(pricesDenominator * indexDenominator);
-                
+
                 // Handle division by zero or NaN cases
                 if (isNaN(correlation) || !isFinite(correlation)) {
                     correlation = index === 'Unemployment Index' ? -0.35 : 0.5;
                 }
-                
+
                 // Cap correlation to [-1, 1] range
                 correlation = Math.max(-1, Math.min(1, correlation));
-                
+
                 // For unemployment, we expect negative correlation, so adjust if it's positive
                 if (index === 'Unemployment Index' && correlation > 0) {
                     correlation = -Math.abs(correlation);
@@ -203,10 +203,10 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
                 console.error(`Error calculating correlation for ${index}:`, error);
                 correlation = index === 'Unemployment Index' ? -0.35 : 0.5;
             }
-            
+
             return { index, correlation, color: colors[i] };
         });
-        
+
         return correlations;
     } catch (error) {
         console.error('Error calculating economic correlations:', error);
@@ -231,19 +231,19 @@ async function calculateEconomicCorrelations(streetName: string): Promise<{
  * compared to the client-side random forest implementation. We enrich the raw
  * prediction with additional UI-friendly properties to maintain compatibility.
  */
-export async function getXGBoostCurrentValuation(input: XGBoostPredictionInput): Promise<XGBoostPredictionOutput>{
+export async function getXGBoostCurrentValuation(input: XGBoostPredictionInput): Promise<XGBoostPredictionOutput> {
     try {
         const url = `https://backend-1061276508767.asia-southeast1.run.app/api/model/predict?floor_area=${input.floor_area}&street_name=${input.street_name}&storey_range=${input.storey_range}&flat_type=${input.flat_type}&lease_start=${input.lease_start}`
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error('Failed to fetch XGBoost prediction API');
         }
-        
+
         const data = await response.json();
-        
+
         // Calculate economic correlations based on actual data
         const economicCorrelations = await calculateEconomicCorrelations(input.street_name);
-        
+
         // Calculate additional required fields based on the price from API
         return {
             ...data,
@@ -299,4 +299,36 @@ export async function getXGBoostCurrentValuation(input: XGBoostPredictionInput):
         console.error('Error fetching XGBoost prediction:', error);
         throw error;
     }
+}
+
+export async function getXGBoostFuturePrediction(input: XGBoostPredictionInput): Promise<Map<string, number>> {
+    try {
+        const url = `https://backend-1061276508767.asia-southeast1.run.app/api/model/future/predict?floor_area=${input.floor_area}&street_name=${input.street_name}&storey_range=${input.storey_range}&flat_type=${input.flat_type}&lease_start=${input.lease_start}`
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error('Failed to fetch XGBoost prediction API');
+        }
+
+        const data = await response.json();
+        return {
+            ...data
+        }
+    }
+    catch (error) {
+        console.error('Error fetching XGBoost prediction:', error);
+        throw error;
+    }
 } 
+
+export function formatMonthYear(input: string): string {
+    const [monthStr, yearStr] = input.split("-");
+  
+    const month = parseInt(monthStr, 10);
+    const year = parseInt(yearStr, 10);
+  
+    // Create a Date object on the 1st of that month
+    const date = new Date(year, month - 1);
+  
+    // Format it
+    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+}

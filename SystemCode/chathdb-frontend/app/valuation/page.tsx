@@ -76,7 +76,7 @@ import ModelFlowModal from "@/app/components/ModelFlowModal";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useClickOutside } from '@/app/hooks/useClickOutside';
 import PDFGenerator from "@/app/components/PDFGenerator";
-import { XGBoostPredictionInput, XGBoostPredictionOutput, getXGBoostCurrentValuation } from "../api/backend/prediction";
+import { XGBoostPredictionInput, XGBoostPredictionOutput, getXGBoostCurrentValuation, getXGBoostFuturePrediction, formatMonthYear } from "../api/backend/prediction";
 
 interface Amenity {
   type: string;
@@ -209,19 +209,19 @@ function PriceTrendChart({ data, town }: { data: { x: string; y: number }[]; tow
     },
     ...(showForecast
       ? [
-          {
-            id: "Forecast",
-            data: [
-              // Include the last historical data point to connect the lines
-              ...(data.length > 0 ? [data[data.length - 1]] : []),
-              ...forecastData,
-            ].map((point) => ({
-              x: point.x,
-              y: point.y,
-            })),
-            dashed: true,
-          },
-        ]
+        {
+          id: "Forecast",
+          data: [
+            // Include the last historical data point to connect the lines
+            ...(data.length > 0 ? [data[data.length - 1]] : []),
+            ...forecastData,
+          ].map((point) => ({
+            x: point.x,
+            y: point.y,
+          })),
+          dashed: true,
+        },
+      ]
       : []),
   ];
 
@@ -480,7 +480,7 @@ function formatDateForChart(dateStr: string) {
       year: 'numeric'
     });
   }
-  
+
   // Handle "Oct 2024" format
   return dateStr;
 }
@@ -494,11 +494,11 @@ function calculateP3MAverage(transactions: Transaction[], months: string[]) {
   }
 
   console.log(`Calculating P3M for ${transactions.length} transactions over ${months.length} months`);
-  
+
   // Group transactions by month
   const transactionsByMonth = transactions.reduce((acc, transaction) => {
     if (!transaction.month) return acc;
-    
+
     if (!acc[transaction.month]) {
       acc[transaction.month] = [];
     }
@@ -508,15 +508,15 @@ function calculateP3MAverage(transactions: Transaction[], months: string[]) {
 
   // Log available months for debugging
   console.log("Available transaction months:", Object.keys(transactionsByMonth));
-  
+
   // Minimum transactions required in the 3-month window for a valid average
   const MIN_TRANSACTIONS_FOR_AVG = 2; // Require at least 2 transactions for reliable data
-  
+
   return months.map(month => {
     // Get transactions from the current month and previous 2 months
     const [year, monthNum] = month.split('-');
     const currentDate = new Date(parseInt(year), parseInt(monthNum) - 1);
-    
+
     const relevantMonths = [];
     for (let i = 0; i < 3; i++) {
       const d = new Date(currentDate);
@@ -524,7 +524,7 @@ function calculateP3MAverage(transactions: Transaction[], months: string[]) {
       const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       relevantMonths.push(m);
     }
-    
+
     // Collect all transactions from these months
     let relevantTransactions: Transaction[] = [];
     relevantMonths.forEach(m => {
@@ -532,12 +532,12 @@ function calculateP3MAverage(transactions: Transaction[], months: string[]) {
         relevantTransactions.push(...transactionsByMonth[m]);
       }
     });
-    
+
     // Calculate average price ONLY if enough transactions exist
     if (relevantTransactions.length >= MIN_TRANSACTIONS_FOR_AVG) {
       const avgPrice = relevantTransactions.reduce(
         (sum, t) => sum + t.resale_price, 0) / relevantTransactions.length;
-      
+
       return {
         month,
         value: avgPrice
@@ -562,11 +562,11 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
   }
 
   console.log(`Calculating P3M for chart: ${transactions.length} transactions`);
-  
+
   // Group transactions by month
   const transactionsByMonth = transactions.reduce((acc, transaction) => {
     if (!transaction.month) return acc;
-    
+
     if (!acc[transaction.month]) {
       acc[transaction.month] = [];
     }
@@ -576,14 +576,14 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
 
   // Log available months for debugging
   console.log("Available transaction months for chart:", Object.keys(transactionsByMonth));
-  
+
   // Find base trend for simulation when data is missing
   const avgTransactionPrice = transactions.reduce(
     (sum, t) => sum + t.resale_price, 0) / transactions.length;
-  
+
   // Get all available months sorted chronologically
   const allAvailableMonths = Object.keys(transactionsByMonth).sort();
-  
+
   // Create a month-to-price map for quick lookups
   const monthToPriceMap: Record<string, number> = {};
   allAvailableMonths.forEach(month => {
@@ -593,36 +593,36 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
         (sum, t) => sum + t.resale_price, 0) / monthTransactions.length;
     }
   });
-  
+
   // Generate a historical price trend (simplified)
   // We'll use this trend to simulate prices for missing months
   const historicalTrend: Record<string, number> = {};
   months.forEach((month, index) => {
     const yearMonth = parseInt(month.replace('-', ''));
-    
+
     // Earlier years should have lower prices (approximately 3% annual growth)
     // This is a simplified trend model
     const yearsSince2000 = parseInt(month.split('-')[0]) - 2000;
     const monthIndex = parseInt(month.split('-')[1]) - 1;
-    
+
     // Base value with yearly growth
     const baseTrend = avgTransactionPrice * Math.pow(1.03, yearsSince2000);
-    
+
     // Add some seasonal variation
     const seasonalFactor = 1 + 0.02 * Math.sin((monthIndex / 12) * 2 * Math.PI);
-    
+
     // Add small random factor (±1.5%)
     const randomFactor = 1 + (Math.random() * 0.03 - 0.015);
-    
+
     historicalTrend[month] = baseTrend * seasonalFactor * randomFactor;
   });
-  
+
   // Calculate average price for each month in the eco data
   return months.map(month => {
     // Get transactions from the current month and previous 2 months
     const [year, monthNum] = month.split('-');
     const currentDate = new Date(parseInt(year), parseInt(monthNum) - 1);
-    
+
     const relevantMonths = [];
     for (let i = 0; i < 3; i++) {
       const d = new Date(currentDate);
@@ -630,7 +630,7 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
       const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       relevantMonths.push(m);
     }
-    
+
     // Collect all transactions from these months
     let relevantTransactions: Transaction[] = [];
     relevantMonths.forEach(m => {
@@ -638,7 +638,7 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
         relevantTransactions.push(...transactionsByMonth[m]);
       }
     });
-    
+
     // If we don't have any transactions for this month, try to estimate using nearby data
     if (relevantTransactions.length === 0) {
       if (allAvailableMonths.length > 0) {
@@ -646,18 +646,18 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
         const targetDate = new Date(parseInt(year), parseInt(monthNum) - 1);
         let closestMonth = allAvailableMonths[0];
         let minDiff = Infinity;
-        
+
         for (const m of allAvailableMonths) {
           const [mYear, mMonth] = m.split('-');
           const mDate = new Date(parseInt(mYear), parseInt(mMonth) - 1);
           const diff = Math.abs(targetDate.getTime() - mDate.getTime());
-          
+
           if (diff < minDiff) {
             minDiff = diff;
             closestMonth = m;
           }
         }
-        
+
         // Use transactions from the closest month
         if (transactionsByMonth[closestMonth]) {
           relevantTransactions = [...transactionsByMonth[closestMonth]];
@@ -665,7 +665,7 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
         }
       }
     }
-    
+
     // Calculate average price
     if (relevantTransactions.length === 0) {
       // If still no transactions, use our historical trend model
@@ -675,10 +675,10 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
         value: historicalTrend[month] || avgTransactionPrice
       };
     }
-    
+
     const avgPrice = relevantTransactions.reduce(
       (sum, t) => sum + t.resale_price, 0) / relevantTransactions.length;
-    
+
     return {
       month,
       value: avgPrice
@@ -690,18 +690,18 @@ function calculateP3MAverageForChart(transactions: Transaction[], months: string
 function normalizeValues(values: (number | null)[]) {
   const validValues = values.filter((v): v is number => v !== null);
   if (validValues.length === 0) return values;
-  
+
   // Calculate min and max, but remove extreme outliers
   const sortedValues = [...validValues].sort((a, b) => a - b);
   const lowerBound = sortedValues[Math.floor(sortedValues.length * 0.05)]; // 5th percentile
   const upperBound = sortedValues[Math.floor(sortedValues.length * 0.95)]; // 95th percentile
-  
+
   // Use trimmed statistics to avoid outlier influence
   const min = Math.min(...validValues.filter(v => v >= lowerBound));
   const max = Math.max(...validValues.filter(v => v <= upperBound));
-  
+
   console.log("Normalization range:", { min, max, lowerBound, upperBound });
-  
+
   // Ensure we have a reasonable range
   const range = max - min;
   if (range < 0.001) {
@@ -714,13 +714,13 @@ function normalizeValues(values: (number | null)[]) {
       return variation + Math.sin(i * 0.5) * 5; // Add sine wave variation
     });
   }
-  
+
   return values.map(v => {
     if (v === null) return null;
-    
+
     // Clamp the value to be within our bounds to prevent extremes
     const clampedValue = Math.max(min, Math.min(max, v));
-    
+
     // Now normalize to 1-100
     const normalized = ((clampedValue - min) / range) * 95 + 5; // Scale to 5-100 for better visualization
     return normalized;
@@ -728,12 +728,12 @@ function normalizeValues(values: (number | null)[]) {
 }
 
 // EconomicPerformanceChart Component
-function EconomicPerformanceChart({ 
-  transactions, 
-  streetName 
-}: { 
-  transactions: Transaction[], 
-  streetName: string 
+function EconomicPerformanceChart({
+  transactions,
+  streetName
+}: {
+  transactions: Transaction[],
+  streetName: string
 }) {
   const [ecoData, setEcoData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -749,7 +749,7 @@ function EconomicPerformanceChart({
   ]);
   const [activeTimePreset, setActiveTimePreset] = useState<string>("5y");
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  
+
   // Load all transactions for this street name
   useEffect(() => {
     async function loadAllStreetTransactions() {
@@ -757,7 +757,7 @@ function EconomicPerformanceChart({
         // First check if we already have transactions
         if (transactions && transactions.length > 0) {
           const processedTransactions = [...transactions];
-          
+
           // Make sure month field is set for all transactions
           processedTransactions.forEach(t => {
             if (!t.month && t.transaction_date) {
@@ -768,29 +768,29 @@ function EconomicPerformanceChart({
               }
             }
           });
-          
+
           console.log(`Using ${processedTransactions.length} provided transactions`);
           setAllTransactions(processedTransactions);
           return;
         }
-        
+
         // Otherwise, load from CSV directly
         const response = await fetch('/data/hdb_resale.csv');
         const csv = await response.text();
-        
+
         const rows = csv.split('\n').filter(row => row.trim());
         const headers = rows[0].split(',');
-        
+
         // Parse CSV for transactions matching the street name
         const parsedTransactions = rows.slice(1)
           .map(row => {
             const values = row.split(',');
             const record: Record<string, any> = {};
-            
+
             headers.forEach((header, index) => {
               const trimmedHeader = header.trim();
               record[trimmedHeader] = values[index]?.trim();
-              
+
               // Convert numeric fields
               if (trimmedHeader === 'resale_price' || trimmedHeader === 'floor_area_sqm') {
                 const numValue = parseFloat(record[trimmedHeader]);
@@ -799,7 +799,7 @@ function EconomicPerformanceChart({
                 }
               }
             });
-            
+
             return record as Transaction;
           })
           .filter(t => {
@@ -809,17 +809,17 @@ function EconomicPerformanceChart({
               .replace(/\bROAD\b/g, 'RD')
               .replace(/\bDRIVE\b/g, 'DR')
               .replace(/\bSTREET\b/g, 'ST');
-            
+
             const normalizedTransactionStreet = (t.street_name || '').toUpperCase()
               .replace(/\bAVENUE\b/g, 'AVE')
               .replace(/\bROAD\b/g, 'RD')
               .replace(/\bDRIVE\b/g, 'DR')
               .replace(/\bSTREET\b/g, 'ST');
-            
-            return normalizedTransactionStreet.includes(normalizedStreetName) || 
-                   normalizedStreetName.includes(normalizedTransactionStreet);
+
+            return normalizedTransactionStreet.includes(normalizedStreetName) ||
+              normalizedStreetName.includes(normalizedTransactionStreet);
           });
-        
+
         if (parsedTransactions.length > 0) {
           // Ensure all transactions have month values
           parsedTransactions.forEach(t => {
@@ -831,24 +831,24 @@ function EconomicPerformanceChart({
               }
             }
           });
-          
+
           console.log(`Found ${parsedTransactions.length} transactions for ${streetName}`);
           console.log("Sample transaction:", parsedTransactions[0]);
           setAllTransactions(parsedTransactions);
         } else {
           console.warn(`No transactions found for ${streetName}, using simulated data`);
-          
+
           // If no transactions are found, create simulated data
           // This ensures we still have a chart even without real data
           const simulatedTransactions: Transaction[] = [];
           const currentYear = new Date().getFullYear();
-          
+
           // Generate some transaction data for each quarter of the past 5 years
           for (let year = currentYear; year >= currentYear - 5; year--) {
             for (let month of [1, 4, 7, 10]) {
               const avgPrice = 650000 * (1 + (currentYear - year) * 0.03);
               const randomVariation = 1 + (Math.random() * 0.1 - 0.05);
-              
+
               simulatedTransactions.push({
                 month: `${year}-${String(month).padStart(2, '0')}`,
                 street_name: streetName,
@@ -861,30 +861,30 @@ function EconomicPerformanceChart({
               } as Transaction);
             }
           }
-          
+
           setAllTransactions(simulatedTransactions);
         }
       } catch (error) {
         console.error("Error loading all street transactions:", error);
       }
     }
-    
+
     loadAllStreetTransactions();
   }, [streetName, transactions]);
-  
+
   useEffect(() => {
     async function fetchEconomicData() {
       try {
         setLoading(true);
-        
+
         // Fetch eco data
         const response = await fetch('/data/eco_data.csv');
         const csvText = await response.text();
-        
+
         // Parse CSV
         const rows = csvText.split('\n').filter(row => row.trim());
         const headers = rows[0].split(',').map(h => h.trim());
-        
+
         const parsedData = rows.slice(1).map(row => {
           const values = row.split(',');
           return headers.reduce((obj, header, index) => {
@@ -892,32 +892,32 @@ function EconomicPerformanceChart({
             return obj;
           }, {} as Record<string, string>);
         });
-        
+
         // Sort by date (oldest first)
         parsedData.sort((a, b) => {
           if (!a.month || !b.month) return 0;
           return a.month.localeCompare(b.month);
         });
-        
+
         // Calculate 3-month average of transaction prices and normalize
         const months = parsedData.map(d => d.month);
         console.log(`Calculating P3M for ${allTransactions.length} transactions over ${months.length} months`);
         const p3mAverages = calculateP3MAverageForChart(allTransactions, months);
-        
+
         // Extract values for normalization
         const p3mValues = p3mAverages.map(d => d.value);
         console.log(`P3M values (raw):`, p3mValues.slice(0, 5));
         const normalizedP3mValues = normalizeValues(p3mValues);
         console.log(`P3M values (normalized):`, normalizedP3mValues.slice(0, 5));
-        
+
         // Combine with eco data
         const combinedData = parsedData.map((d, i) => ({
           ...d,
           'Street Prices': normalizedP3mValues[i] || null
         }));
-        
+
         setEcoData(combinedData);
-        
+
         // Set initial timeRange based on the data length
         if (combinedData.length > 0) {
           // Default to last 5 years (20 quarterly data points)
@@ -925,28 +925,28 @@ function EconomicPerformanceChart({
           const start = Math.max(0, end - 20);
           setTimeRange([start, end]);
         }
-        
+
         setLoading(false);
       } catch (error) {
         console.error('Error loading economic data:', error);
         setLoading(false);
       }
     }
-    
+
     if (allTransactions.length > 0) {
       fetchEconomicData();
     }
   }, [allTransactions]);
-  
+
   // Apply preset time ranges
   const applyTimePreset = useCallback((preset: string) => {
     if (!ecoData.length) return;
-    
+
     setActiveTimePreset(preset);
-    
+
     const end = ecoData.length;
     let start = 0;
-    
+
     switch (preset) {
       case "2y":
         start = Math.max(0, end - 8); // 2 years (8 quarters)
@@ -961,24 +961,24 @@ function EconomicPerformanceChart({
         start = 0; // All available data
         break;
     }
-    
+
     setTimeRange([start, end]);
   }, [ecoData]);
-  
+
   // Filter data based on selected time range
   const filteredData = useMemo(() => {
     if (!ecoData.length) return [];
-    
+
     const startIdx = Math.max(0, timeRange[0]);
     const endIdx = Math.min(ecoData.length, timeRange[1]);
-    
+
     return ecoData.slice(startIdx, endIdx);
   }, [ecoData, timeRange]);
-  
+
   // Prepare data for Nivo chart
   const chartData = useMemo(() => {
     if (!filteredData.length) return [];
-    
+
     return selectedIndicators.map(indicator => {
       const data = filteredData
         .filter(d => d[indicator] !== null && d[indicator] !== undefined)
@@ -986,19 +986,19 @@ function EconomicPerformanceChart({
           // Ensure all values are properly typed
           const xValue = formatDateForChart(d.month || '');
           const yValue = parseFloat(d[indicator] as string) || 0;
-          
+
           return {
             x: xValue,
             y: yValue
           };
         });
-        // No need to reverse - data is already sorted chronologically
-      
+      // No need to reverse - data is already sorted chronologically
+
       const indicatorInfo = availableIndicators.find(i => i.id === indicator) || {
         name: indicator,
         color: '#000000'
       };
-      
+
       return {
         id: indicatorInfo.name,
         color: indicatorInfo.color,
@@ -1006,7 +1006,7 @@ function EconomicPerformanceChart({
       };
     });
   }, [filteredData, selectedIndicators, availableIndicators]);
-  
+
   // Handle indicator toggle
   const toggleIndicator = useCallback((indicator: string) => {
     setSelectedIndicators(prev => {
@@ -1020,7 +1020,7 @@ function EconomicPerformanceChart({
       }
     });
   }, []);
-  
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1029,7 +1029,7 @@ function EconomicPerformanceChart({
       </div>
     );
   }
-  
+
   if (ecoData.length === 0) {
     return (
       <div className="text-muted-foreground py-4">
@@ -1037,7 +1037,7 @@ function EconomicPerformanceChart({
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-4 py-2">
       {/* Time period selector */}
@@ -1046,7 +1046,7 @@ function EconomicPerformanceChart({
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Time Period</span>
         </div>
-        
+
         {/* Time presets */}
         <div className="grid grid-cols-4 gap-2">
           {[
@@ -1060,8 +1060,8 @@ function EconomicPerformanceChart({
               onClick={() => applyTimePreset(preset.id)}
               className={`
                 rounded-full px-3 py-2 text-xs font-medium transition-all
-                ${activeTimePreset === preset.id 
-                  ? 'bg-primary text-white shadow-md transform scale-105' 
+                ${activeTimePreset === preset.id
+                  ? 'bg-primary text-white shadow-md transform scale-105'
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'}
               `}
             >
@@ -1069,11 +1069,11 @@ function EconomicPerformanceChart({
             </button>
           ))}
         </div>
-        
+
         {/* Selected range information */}
         <div className="flex items-center justify-between mt-4 text-xs">
           <div className="bg-muted/40 rounded-md px-2 py-1">
-            <span className="text-muted-foreground">From:</span> 
+            <span className="text-muted-foreground">From:</span>
             <span className="font-medium ml-1">
               {ecoData[timeRange[0]]?.month || ''}
             </span>
@@ -1091,7 +1091,7 @@ function EconomicPerformanceChart({
           </div>
         </div>
       </div>
-      
+
       {/* Indicators selection */}
       <div className="flex flex-wrap gap-2 py-2">
         {availableIndicators.map((indicator) => (
@@ -1117,15 +1117,15 @@ function EconomicPerformanceChart({
           </button>
         ))}
       </div>
-      
+
       {/* Chart */}
       <div className="h-[400px] w-full" id="economic-chart">
         <ResponsiveLine
           data={chartData}
           margin={{ top: 30, right: 110, bottom: 50, left: 50 }}
           xScale={{ type: 'point' }}
-          yScale={{ 
-            type: 'linear', 
+          yScale={{
+            type: 'linear',
             min: 0,
             max: 100,
             stacked: false,
@@ -1141,7 +1141,7 @@ function EconomicPerformanceChart({
             legend: '',
             legendOffset: 36,
             legendPosition: 'middle',
-            tickValues: filteredData.length > 20 
+            tickValues: filteredData.length > 20
               ? filteredData.filter((_, i) => i % Math.ceil(filteredData.length / 10) === 0).map(d => formatDateForChart(d.month || ''))
               : undefined
           }}
@@ -1232,6 +1232,7 @@ export default function ValuationPage() {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [predictionResult, setPredictionResult] =
     useState<XGBoostPredictionOutput | null>(null);
+  const [futurePrediction, setFuturePrediction] = useState<Map<string, number> | null>(null);
 
   // Create a stable key for Map component
   const [mapKey] = useState(() => Math.random());
@@ -1441,11 +1442,11 @@ export default function ValuationPage() {
           // Always show the form when the "Get Valuation" button is clicked
           console.log("Setting showValuationForm to true for fresh valuation input");
           setShowValuationForm(true);
-          
+
           // Open the modal
           console.log("Setting valuationModalOpen to true");
           setValuationModalOpen(true);
-          
+
         } catch (innerError) {
           console.error("Error in setTimeout callback:", innerError);
           toast.error("An error occurred while preparing the valuation. Please try again.");
@@ -1476,7 +1477,7 @@ export default function ValuationPage() {
     setShowValuationForm(true);
   };
 
-  const getPredictionValue = async() => {
+  const getPredictionValue = async () => {
     try {
       // Validate inputs
       if (!storeyRange) {
@@ -1524,37 +1525,43 @@ export default function ValuationPage() {
         console.log("Calling getXGBoostCurrentValuation API");
         const result = await getXGBoostCurrentValuation(input);
         console.log("Valuation calculation successful");
-        
+
+        // Calculate future prediction
+        console.log("Calling getXGBoostFuturePrediction API");
+        const predicted = await getXGBoostFuturePrediction(input);
+        setFuturePrediction(predicted);
+        console.log("Prediction calculation successful");
+
         // Get the town from the transaction data
         const town = transactions[0]?.town || "";
         if (!town) {
           console.warn("Town information not available for multiplier calculation");
         }
-        
+
         // Apply multipliers to calculate the adjusted market value
         const baseEstimatedValue = result.baseEstimatedValue || result.price;
-        
+
         // Calculate dynamic multipliers based on town-specific adjustment factors
         let googleTrendsMultiplier = 1.0;
         if (googleTrendsData) {
           googleTrendsMultiplier = await calculateGoogleTrendsMultiplier(googleTrendsData, town);
         }
-        
+
         let sentimentMultiplier = 1.0;
         if (topStoriesData && topStoriesData.news_results) {
           sentimentMultiplier = await calculateSentimentMultiplier(topStoriesData, town);
         }
-        
+
         let economicTrendMultiplier = 1.0;
         // Get the data needed for economic multiplier calculation
         try {
           const response = await fetch('/data/eco_data.csv');
           const csvText = await response.text();
-          
+
           // Parse CSV
           const rows = csvText.split('\n').filter(row => row.trim());
           const headers = rows[0].split(',').map(h => h.trim());
-          
+
           const economicData = rows.slice(1).map(row => {
             const values = row.split(',');
             return headers.reduce((obj, header, index) => {
@@ -1562,28 +1569,28 @@ export default function ValuationPage() {
               return obj;
             }, {} as Record<string, string>);
           });
-          
+
           // Extract months for matching transactions
           const months = economicData.map(d => d.month);
-          
+
           // Calculate 3-month average prices
           const p3mAverages = calculateP3MAverage(transactions, months);
-          
+
           // Get street prices for correlation
           const streetPrices = p3mAverages.map(d => d.value);
-          
+
           if (streetPrices.length > 0) {
             economicTrendMultiplier = await calculateEconomicMultiplier(economicData, streetPrices, town);
           }
         } catch (error) {
           console.error("Failed to calculate economic multiplier:", error);
         }
-        
+
         // Calculate the Adjusted Market Value
         const adjustedValue = Math.round(
           baseEstimatedValue * googleTrendsMultiplier * sentimentMultiplier * economicTrendMultiplier
         );
-        
+
         // Create enhanced result with adjusted value
         const enhancedResult = {
           ...result,
@@ -1596,7 +1603,7 @@ export default function ValuationPage() {
             economicTrend: economicTrendMultiplier
           }
         };
-        
+
         // Log the calculation for debugging
         console.log("Applied multipliers:", {
           baseEstimatedValue,
@@ -1605,14 +1612,14 @@ export default function ValuationPage() {
           economicTrend: economicTrendMultiplier,
           adjustedValue
         });
-        
+
         // Update state with enhanced result
         setPredictionResult(enhancedResult);
         // Show success toast
         toast.success("Valuation calculated successfully!");
         // Close the form and show results
         setShowValuationForm(false);
-        
+
         // Add a small delay before ending loading state to ensure the transition is smooth
         setTimeout(() => {
           console.log("getXGBoostCurrentValuation successful - setting loading FALSE after delay");
@@ -1620,7 +1627,7 @@ export default function ValuationPage() {
         }, 300); // Slightly shorter delay for more responsiveness
       } catch (error: any) {
         console.error("Valuation error:", error);
-        
+
         // Show more specific error messages based on the error type
         if (error.message && error.message.includes("network")) {
           toast.error("Network error. Please check your connection and try again.");
@@ -1635,22 +1642,22 @@ export default function ValuationPage() {
               : "Failed to calculate valuation. Please try again."
           );
         }
-        
+
         console.log("getXGBoostCurrentValuation error - setting loading FALSE");
         setLoadingValuation(false);
       }
     } catch (outerError: any) {
       console.error("Unexpected error in valuation process:", outerError);
-      
+
       // More descriptive error for the outer try-catch
-      const errorMessage = outerError instanceof Error 
-        ? outerError.message 
+      const errorMessage = outerError instanceof Error
+        ? outerError.message
         : "An unexpected error occurred";
-        
+
       toast.error(`Valuation calculation failed: ${errorMessage}. Please try again.`, {
         duration: 5000, // Show longer for error messages
       });
-      
+
       console.log("getXGBoostCurrentValuation outer error - setting loading FALSE");
       setLoadingValuation(false);
     }
@@ -1706,23 +1713,23 @@ export default function ValuationPage() {
         console.log("Calling calculateRandomForestValuation API");
         const result = await calculateRandomForestValuation(input);
         console.log("Valuation calculation successful");
-        
+
         // Use the estimated value directly without any market adjustment factor
         const baseValue = Math.round(result.baseEstimatedValue || result.estimatedValue);
-        
+
         // Get the town from the transaction data
         const town = transactions[0]?.town || "";
         if (!town) {
           console.warn("Town information not available for multiplier calculation");
         }
-        
+
         // Calculate dynamic multipliers from real data
         // 1. Google Trends multiplier
         let googleTrendsMultiplier = 1.0;
         if (googleTrendsData) {
           googleTrendsMultiplier = await calculateGoogleTrendsMultiplier(googleTrendsData, town);
         }
-        
+
         // 2. Sentiment multiplier from news stories
         let sentimentMultiplier = 1.0;
         const localSentimentDetails = { positive: 0, negative: 0, neutral: 0, total: 0 };
@@ -1740,13 +1747,13 @@ export default function ValuationPage() {
             }
             localSentimentDetails.total++;
           });
-          
+
           sentimentMultiplier = await calculateSentimentMultiplier(topStoriesData, town);
           console.log("News sentiment details:", localSentimentDetails, "Multiplier:", sentimentMultiplier);
         } else {
           console.warn("No news stories data available for sentiment calculation");
         }
-        
+
         // 3. Economic multiplier from economic indicator correlations
         let economicTrendMultiplier = 1.0;
         const economicDetails: {
@@ -1754,19 +1761,19 @@ export default function ValuationPage() {
           trend: number;
           mostCorrelatedIndex: string;
         } = { correlations: [], trend: 0, mostCorrelatedIndex: '' };
-        
+
         // Store correlations for display in the UI
         let economicCorrelations: EconomicCorrelation[] = [];
-        
+
         // Fetch fresh economic data for analysis
         try {
           const response = await fetch('/data/eco_data.csv');
           const csvText = await response.text();
-          
+
           // Parse CSV
           const rows = csvText.split('\n').filter(row => row.trim());
           const headers = rows[0].split(',').map(h => h.trim());
-          
+
           const economicData = rows.slice(1).map(row => {
             const values = row.split(',');
             return headers.reduce((obj, header, index) => {
@@ -1774,42 +1781,42 @@ export default function ValuationPage() {
               return obj;
             }, {} as Record<string, string>);
           });
-          
+
           // Sort by date (oldest first)
           economicData.sort((a, b) => {
             if (!a.month || !b.month) return 0;
             return a.month.localeCompare(b.month);
           });
-          
+
           if (economicData.length > 0 && transactions.length > 0) {
             // Extract months for matching transactions
             const months = economicData.map(d => d.month);
-            
+
             // Calculate 3-month average prices
             const p3mAverages = calculateP3MAverage(transactions, months);
-            
+
             // Get street prices for correlation
             const streetPrices = p3mAverages.map(d => d.value);
-            
+
             if (streetPrices.length > 0) {
               // Define the indices we want to check correlations with - include Unemployment
               const indices = ['HDB Resale Index', 'Rental Index', 'GDP Index', 'CPI Index', 'Unemployment Index'];
-              
+
               // Calculate correlations for each index
               const calculatedCorrelations: Array<{ index: string; correlation: number }> = [];
-              
+
               indices.forEach(indexName => {
                 // Create paired data points where both values are available
-                const validPairs: {monthIndex: number, street: number, index: number}[] = [];
-                
+                const validPairs: { monthIndex: number, street: number, index: number }[] = [];
+
                 // Extract values for this index while maintaining month alignment
                 for (let i = 0; i < Math.min(economicData.length, streetPrices.length); i++) {
                   const indexValue = economicData[i][indexName];
-                  const parsedIndexValue = typeof indexValue === 'number' ? 
+                  const parsedIndexValue = typeof indexValue === 'number' ?
                     indexValue : parseFloat(indexValue) || 0;
-                    
+
                   const streetPrice = streetPrices[i];
-                  
+
                   // Only use data points where both values are valid
                   if (streetPrice !== null && !isNaN(streetPrice) && !isNaN(parsedIndexValue)) {
                     validPairs.push({
@@ -1819,27 +1826,27 @@ export default function ValuationPage() {
                     });
                   }
                 }
-                
+
                 // Only calculate correlation if we have enough valid pairs
                 if (validPairs.length >= 4) {
                   const streetValues = validPairs.map(p => p.street);
                   const indexValues = validPairs.map(p => p.index);
-                  
+
                   const correlation = calculateCorrelation(streetValues, indexValues);
                   console.log(`Correlation for ${indexName} with ${validPairs.length} points: ${correlation.toFixed(3)}`);
-                  
+
                   calculatedCorrelations.push({ index: indexName, correlation });
-                  
+
                   // Store for diagnostics
                   economicDetails.correlations.push({ index: indexName, correlation });
                 } else {
                   console.log(`Skipping correlation for ${indexName}: Only ${validPairs.length} valid data points`);
                 }
               });
-              
+
               // Calculate economic trend multiplier based on town and economic data
               economicTrendMultiplier = await calculateEconomicMultiplier(economicData, streetPrices, town);
-              
+
               // Define colors for each index for UI
               const indexColors: Record<string, string> = {
                 'HDB Resale Index': 'blue-500',
@@ -1848,14 +1855,14 @@ export default function ValuationPage() {
                 'CPI Index': 'purple-500',
                 'Unemployment Index': 'red-500'
               };
-              
+
               // Format for display with colors
               economicCorrelations = calculatedCorrelations.map(c => ({
                 index: c.index,
                 correlation: c.correlation,
                 color: indexColors[c.index] || 'gray-500'
               }));
-              
+
               console.log("Economic correlations:", economicDetails, "Multiplier:", economicTrendMultiplier);
             } else {
               console.warn("No street prices available for economic correlation");
@@ -1867,19 +1874,19 @@ export default function ValuationPage() {
           console.error("Failed to calculate economic multiplier:", error);
           // Keep default values
         }
-        
+
         // Log the multipliers we're using
         console.log("Applied multipliers:", {
           googleTrends: googleTrendsMultiplier,
           sentiment: sentimentMultiplier,
           economicTrend: economicTrendMultiplier
         });
-        
+
         // Apply multipliers to the base value
         const adjustedValue = Math.round(
           baseValue * googleTrendsMultiplier * sentimentMultiplier * economicTrendMultiplier
         );
-        
+
         // Create a modified result with both base and adjusted values
         const enhancedResult = {
           ...result,
@@ -1902,7 +1909,7 @@ export default function ValuationPage() {
 
         // Close the form and show results
         setShowValuationForm(false);
-        
+
         // Add a small delay before ending loading state to ensure the transition is smooth
         setTimeout(() => {
           console.log("performRandomForestValuation successful - setting loading FALSE after delay");
@@ -1910,7 +1917,7 @@ export default function ValuationPage() {
         }, 300); // Slightly shorter delay for more responsiveness
       } catch (error: any) {
         console.error("Valuation error:", error);
-        
+
         // Show more specific error messages based on the error type
         if (error.message && error.message.includes("network")) {
           toast.error("Network error. Please check your connection and try again.");
@@ -1925,22 +1932,22 @@ export default function ValuationPage() {
               : "Failed to calculate valuation. Please try again."
           );
         }
-        
+
         console.log("performRandomForestValuation error - setting loading FALSE");
         setLoadingValuation(false);
       }
     } catch (outerError: any) {
       console.error("Unexpected error in valuation process:", outerError);
-      
+
       // More descriptive error for the outer try-catch
-      const errorMessage = outerError instanceof Error 
-        ? outerError.message 
+      const errorMessage = outerError instanceof Error
+        ? outerError.message
         : "An unexpected error occurred";
-        
+
       toast.error(`Valuation calculation failed: ${errorMessage}. Please try again.`, {
         duration: 5000, // Show longer for error messages
       });
-      
+
       console.log("performRandomForestValuation outer error - setting loading FALSE");
       setLoadingValuation(false);
     }
@@ -1984,11 +1991,11 @@ export default function ValuationPage() {
   useClickOutside(valuationModalRef, (event) => {
     // Check if the click is on a select component or its content
     const target = event.target as HTMLElement;
-    const isSelectInteraction = 
+    const isSelectInteraction =
       target.closest('[role="combobox"]') || // Select trigger
       target.closest('[role="listbox"]') ||  // Select content
       target.closest('[data-radix-select-viewport]'); // Select viewport
-    
+
     // Only close if it's not a select interaction
     if (!isSelectInteraction) {
       console.log("Click outside valuation modal - closing");
@@ -2323,8 +2330,8 @@ export default function ValuationPage() {
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="bg-muted/30 rounded-b-lg px-4 pb-4">
-                  <EconomicPerformanceChart 
-                    transactions={transactions} 
+                  <EconomicPerformanceChart
+                    transactions={transactions}
                     streetName={address?.streetName || ""}
                   />
                 </AccordionContent>
@@ -2556,11 +2563,10 @@ export default function ValuationPage() {
                         }, 10);
                       }}
                       disabled={loadingValuation}
-                      className={`w-full mt-4 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] overflow-hidden relative ${
-                        loadingValuation 
-                          ? 'bg-primary/80 animate-pulse' 
-                          : 'bg-primary hover:bg-primary/90'
-                      }`}
+                      className={`w-full mt-4 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] overflow-hidden relative ${loadingValuation
+                        ? 'bg-primary/80 animate-pulse'
+                        : 'bg-primary hover:bg-primary/90'
+                        }`}
                     >
                       {loadingValuation ? (
                         <div className="flex items-center justify-center w-full">
@@ -2591,8 +2597,8 @@ export default function ValuationPage() {
                     transition={{ delay: 0.2, duration: 0.5 }}
                     className="text-5xl font-bold text-primary mb-2"
                   >
-                    ${predictionResult?.price 
-                      ? Math.round(predictionResult.price).toLocaleString() 
+                    ${predictionResult?.price
+                      ? Math.round(predictionResult.price).toLocaleString()
                       : "0"}
                   </motion.div>
                   <motion.p
@@ -2609,8 +2615,8 @@ export default function ValuationPage() {
                     transition={{ delay: 0.6, duration: 0.5 }}
                     className="mt-3 text-sm font-medium text-primary"
                   >
-                    ${predictionResult?.pricePerSqm 
-                      ? Math.round(predictionResult.pricePerSqm).toLocaleString() 
+                    ${predictionResult?.pricePerSqm
+                      ? Math.round(predictionResult.pricePerSqm).toLocaleString()
                       : "0"} per sqm
                   </motion.div>
                   <motion.div
@@ -2800,21 +2806,21 @@ export default function ValuationPage() {
                   <h3 className="text-sm font-medium mb-3">
                     Adjusted Market Value Calculation
                   </h3>
-                  
+
                   {/* Base Estimated Value */}
                   <div className="bg-white/50 p-3 rounded-lg mb-3">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Base Estimated Value:</span>
                       <span className="font-medium">
-                        ${predictionResult?.baseEstimatedValue 
-                          ? Math.round(predictionResult.baseEstimatedValue).toLocaleString() 
+                        ${predictionResult?.baseEstimatedValue
+                          ? Math.round(predictionResult.baseEstimatedValue).toLocaleString()
                           : predictionResult?.price
                             ? Math.round(predictionResult.price * 0.96).toLocaleString()
                             : "0"}
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Initial value calculated by our Random Forest model based on storey range, floor area, and lease
+                      Initial value calculated by our XGBoost model based on storey range, floor area, and lease
                     </div>
                   </div>
 
@@ -2851,8 +2857,8 @@ export default function ValuationPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">
-                          {predictionResult?.multipliers?.googleTrends 
-                            ? predictionResult.multipliers.googleTrends.toFixed(2) 
+                          {predictionResult?.multipliers?.googleTrends
+                            ? predictionResult.multipliers.googleTrends.toFixed(2)
                             : '1.00'}
                         </span>
                         {predictionResult?.multipliers?.googleTrends ? (
@@ -2868,7 +2874,7 @@ export default function ValuationPage() {
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Sentiment Multiplier */}
                     <div className="flex items-center justify-between bg-white/30 p-2 rounded-lg">
                       <div className="flex items-center gap-2">
@@ -2904,8 +2910,8 @@ export default function ValuationPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">
-                          {predictionResult?.multipliers?.sentiment 
-                            ? predictionResult.multipliers.sentiment.toFixed(2) 
+                          {predictionResult?.multipliers?.sentiment
+                            ? predictionResult.multipliers.sentiment.toFixed(2)
                             : '1.00'}
                         </span>
                         {predictionResult?.multipliers?.sentiment ? (
@@ -2921,7 +2927,7 @@ export default function ValuationPage() {
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Economic Trend Multiplier */}
                     <div className="flex items-center justify-between bg-white/30 p-2 rounded-lg">
                       <div className="flex items-center gap-2">
@@ -2957,8 +2963,8 @@ export default function ValuationPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">
-                          {predictionResult?.multipliers?.economicTrend 
-                            ? predictionResult.multipliers.economicTrend.toFixed(2) 
+                          {predictionResult?.multipliers?.economicTrend
+                            ? predictionResult.multipliers.economicTrend.toFixed(2)
                             : '1.00'}
                         </span>
                         {predictionResult?.multipliers?.economicTrend ? (
@@ -3006,19 +3012,18 @@ export default function ValuationPage() {
                     <div className="space-y-2">
                       {predictionResult?.economicCorrelations && predictionResult.economicCorrelations.length > 0 ? (
                         // Display actual calculated correlations
-                        predictionResult.economicCorrelations.map((correlation: {index: string; correlation: number; color: string}) => (
+                        predictionResult.economicCorrelations.map((correlation: { index: string; correlation: number; color: string }) => (
                           <div key={correlation.index} className="flex items-center justify-between text-xs">
                             <span>{correlation.index.replace('Index', '').trim()}</span>
                             <div className="flex items-center">
                               <div className="w-16 h-1.5 bg-muted rounded-full mr-2">
-                                <div 
-                                  className={`rounded-full h-1.5 ${
-                                    correlation.color === 'blue-500' ? 'bg-blue-500' :
+                                <div
+                                  className={`rounded-full h-1.5 ${correlation.color === 'blue-500' ? 'bg-blue-500' :
                                     correlation.color === 'green-500' ? 'bg-green-500' :
-                                    correlation.color === 'amber-500' ? 'bg-amber-500' :
-                                    correlation.color === 'purple-500' ? 'bg-purple-500' :
-                                    correlation.color === 'red-500' ? 'bg-red-500' : 'bg-gray-500'
-                                  }`}
+                                      correlation.color === 'amber-500' ? 'bg-amber-500' :
+                                        correlation.color === 'purple-500' ? 'bg-purple-500' :
+                                          correlation.color === 'red-500' ? 'bg-red-500' : 'bg-gray-500'
+                                    }`}
                                   style={{ width: `${Math.min(Math.abs(correlation.correlation * 100), 100)}%` }}
                                 ></div>
                               </div>
@@ -3042,7 +3047,7 @@ export default function ValuationPage() {
                               <span className="font-medium">0.65</span>
                             </div>
                           </div>
-                          
+
                           {/* Rental Index */}
                           <div className="flex items-center justify-between text-xs">
                             <span>Rental Index</span>
@@ -3053,7 +3058,7 @@ export default function ValuationPage() {
                               <span className="font-medium">0.58</span>
                             </div>
                           </div>
-                          
+
                           {/* GDP Index */}
                           <div className="flex items-center justify-between text-xs">
                             <span>GDP Index</span>
@@ -3064,7 +3069,7 @@ export default function ValuationPage() {
                               <span className="font-medium">0.40</span>
                             </div>
                           </div>
-                          
+
                           {/* CPI Index */}
                           <div className="flex items-center justify-between text-xs">
                             <span>Consumer Price Index</span>
@@ -3075,7 +3080,7 @@ export default function ValuationPage() {
                               <span className="font-medium">0.45</span>
                             </div>
                           </div>
-                          
+
                           {/* Unemployment Index */}
                           <div className="flex items-center justify-between text-xs">
                             <span>Unemployment Index</span>
@@ -3098,6 +3103,28 @@ export default function ValuationPage() {
                         "Correlations with economic indices show how your property value relates to broader economic trends."
                       )}
                     </p>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.55, duration: 0.5 }}
+                  className="bg-muted/30 p-4 rounded-lg mt-4"
+                >
+                  <h3 className="text-sm font-medium mb-3">
+                    Future Value Prediction
+                  </h3>
+
+                  <div className="bg-white/50 p-3 rounded-lg mb-3">
+                    {Object.entries(futurePrediction || {}).map(([key, transaction], index) => (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">{formatMonthYear(key)}</span>
+                        <span className="font-medium">
+                          ${Math.trunc(transaction).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </motion.div>
 
