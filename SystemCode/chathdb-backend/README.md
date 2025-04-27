@@ -21,6 +21,15 @@ python3 -m flask run
 pip3 freeze > requirements.txt
 ````
 
+## Important Files
+| Content | Folder | Description |
+| ------- | ------ | ----------- |
+| **Static models** | /static/models | Static model pickle files |
+| **Model training scripts** | /lib/xgboost | Model building scripts |
+| **Multiplier calculation scripts** | /lib/multiplier | Multiplier calculation script |
+| **Data scraping scripts** | /lib/datahub | Web scraping and data cleanup logic |
+| **Sentiment analysis** | /lib/sentiment | Sentiment analysis on Google News |
+
 ## API Documentation
 ### [GET] /api/health
 - Healthcheck to see if server is running.
@@ -51,21 +60,6 @@ pip3 freeze > requirements.txt
 | flat_type | str | "2 ROOM"
 
 
-## Database Management
-### Initialize DB Migrations
-````bash
-# Install Supabase CLI
-## Mac
-brew install supabase/tap/supabase
+## Hosting Server 
 
-# Init Supabase in your project
-supabase init
-
- # Creates a new migration file
-supabase migration new add_users_table
-
-# Open the newly created file in /supabase/migrations and define your schema in SQL.
-
-# Push the new schema to Supabase
-supabase db push
-````
+The server is running live using Google Cloud platform.
